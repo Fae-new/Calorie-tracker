@@ -38,7 +38,7 @@ type DailyCalories = {
 export default function AnalyticsScreen() {
   const db = useSQLiteContext();
   const { width } = useWindowDimensions();
-  const [range, setRange] = useState<Range>('30D');
+  const [range, setRange] = useState<Range>('All');
   const [weights, setWeights] = useState<WeightLog[]>([]);
   const [dailyCalories, setDailyCalories] = useState<DailyCalories[]>([]);
   const [weightKg, setWeightKg] = useState('');
@@ -138,14 +138,12 @@ export default function AnalyticsScreen() {
             data={weightData}
             width={chartWidth}
             height={190}
-            areaChart
+            adjustToWidth
+            disableScroll
             curved
             thickness={3}
             color={colors.blue}
-            startFillColor="rgba(56, 189, 248, 0.32)"
-            endFillColor="rgba(56, 189, 248, 0.02)"
-            hideDataPoints={false}
-            dataPointsColor={colors.yellow}
+            hideDataPoints
             yAxisColor={colors.border}
             xAxisColor={colors.border}
             rulesColor={colors.border}
