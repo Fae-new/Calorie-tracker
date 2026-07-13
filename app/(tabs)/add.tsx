@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { ChevronLeft, ChevronRight, MinusCircle, Plus, Search, Utensils } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, CircleHelp, MinusCircle, Plus, Search, Utensils } from 'lucide-react-native';
 import { useSQLiteContext } from 'expo-sqlite';
 
 import { Button } from '../../src/components/Button';
@@ -16,12 +16,22 @@ import { addMealLog, deleteMealLogsForGroup, getFoodsWithVariants, getMealLogsFo
 import { colors, spacing } from '../../src/lib/theme';
 import type { FoodVariant, FoodWithVariants, MealLog, MealType } from '../../src/lib/types';
 
-type MealItem = {
+type FoodMealItem = {
+  kind: 'food';
   localId: string;
   food: FoodWithVariants;
   variant: FoodVariant;
   grams: string;
 };
+
+type ManualMealItem = {
+  kind: 'manual';
+  localId: string;
+  label: string;
+  kcal: string;
+};
+
+type MealItem = FoodMealItem | ManualMealItem;
 
 type AddMealParams = {
   loggedDate?: string | string[];
@@ -56,6 +66,16 @@ function defaultVariant(food: FoodWithVariants) {
 }
 
 function itemNutrition(item: MealItem) {
+  if (item.kind === 'manual') {
+    return {
+      grams: 0,
+      kcal: Math.round((Number(item.kcal) || 0) * 10) / 10,
+      protein: 0,
+      carbs: 0,
+      fat: 0,
+    };
+  }
+
   const grams = Number(item.grams) || 0;
   return {
     grams,
@@ -79,7 +99,12 @@ function mealItemsFromLogs(logs: MealLog[], foods: FoodWithVariants[]) {
     .map<MealItem | null>((log, index) => {
       const food = foods.find((item) => item.id === log.foodId);
       if (!food) {
-        return null;
+        return {
+          kind: 'manual',
+          localId: `edit-manual-${log.id}-${index}`,
+          label: log.foodNameSnapshot === 'Imported calories' ? '' : log.foodNameSnapshot,
+          kcal: String(log.kcal),
+        };
       }
 
       const variant = food.variants.find((item) => item.id === log.variantId) ?? defaultVariant(food);
@@ -88,6 +113,7 @@ function mealItemsFromLogs(logs: MealLog[], foods: FoodWithVariants[]) {
       }
 
       return {
+        kind: 'food',
         localId: `edit-${log.id}-${index}`,
         food,
         variant,
@@ -233,10 +259,24 @@ export default function AddMealScreen() {
     setItems((current) => [
       ...current,
       {
+        kind: 'food',
         localId: `${food.id}-${variant.id}-${Date.now()}-${current.length}`,
         food,
         variant,
         grams: String(portion?.grams ?? 100),
+      },
+    ]);
+    setQuery('');
+  }
+
+  function addManualItem(label = '') {
+    setItems((current) => [
+      ...current,
+      {
+        kind: 'manual',
+        localId: `manual-${Date.now()}-${current.length}`,
+        label: label.trim(),
+        kcal: '',
       },
     ]);
     setQuery('');
@@ -262,9 +302,15 @@ export default function AddMealScreen() {
       return;
     }
 
-    const invalid = items.find((item) => itemNutrition(item).grams <= 0);
-    if (invalid) {
-      Alert.alert('Check grams', `${invalid.food.name} needs a valid gram amount.`);
+    const invalidFood = items.find((item) => item.kind === 'food' && itemNutrition(item).grams <= 0);
+    if (invalidFood?.kind === 'food') {
+      Alert.alert('Check grams', `${invalidFood.food.name} needs a valid gram amount.`);
+      return;
+    }
+
+    const invalidManual = items.find((item) => item.kind === 'manual' && itemNutrition(item).kcal <= 0);
+    if (invalidManual) {
+      Alert.alert('Check calories', 'Unknown calorie items need a valid calorie amount.');
       return;
     }
 
@@ -279,6 +325,24 @@ export default function AddMealScreen() {
 
     for (const item of items) {
       const nutrition = itemNutrition(item);
+      if (item.kind === 'manual') {
+        await addMealLog(db, {
+          foodId: null,
+          variantId: null,
+          foodNameSnapshot: item.label.trim() || 'Unknown calories',
+          variantLabelSnapshot: 'Manual',
+          grams: 0,
+          mealType,
+          mealGroupId,
+          loggedAt: editLoggedAt ?? loggedAtForDate(selectedDateKey),
+          kcal: nutrition.kcal,
+          protein: 0,
+          carbs: 0,
+          fat: 0,
+        });
+        continue;
+      }
+
       await addMealLog(db, {
         foodId: item.food.id,
         variantId: item.variant.id,
@@ -348,6 +412,12 @@ export default function AddMealScreen() {
             </AppText>
           </View>
         ) : null}
+        <Button
+          title="Add unknown calories"
+          onPress={() => addManualItem(query)}
+          variant="secondary"
+          icon={<CircleHelp color={colors.blue} size={18} />}
+        />
       </Card>
 
       {normalizedQuery.length >= 2 ? (
@@ -356,9 +426,12 @@ export default function AddMealScreen() {
             <Card>
               <AppText variant="subtitle">No match</AppText>
               <AppText variant="muted" style={styles.resultCopy}>
-                Add this as a custom food from the Foods tab, then come back here to log it.
+                Add the calorie total directly, or create a reusable food with per-100g values.
               </AppText>
-              <Button title="Open Foods" onPress={() => router.push('/foods')} variant="secondary" />
+              <View style={styles.noMatchActions}>
+                <Button title="Add calories" onPress={() => addManualItem(query)} />
+                <Button title="Open Foods" onPress={() => router.push('/foods')} variant="secondary" />
+              </View>
             </Card>
           ) : (
             results.map((food) => {
@@ -386,7 +459,7 @@ export default function AddMealScreen() {
 
       <View style={styles.sectionHeader}>
         <AppText variant="subtitle">This meal</AppText>
-        <AppText variant="caption">{items.length} food{items.length === 1 ? '' : 's'}</AppText>
+        <AppText variant="caption">{items.length} item{items.length === 1 ? '' : 's'}</AppText>
       </View>
 
       {items.length === 0 ? (
@@ -395,6 +468,35 @@ export default function AddMealScreen() {
         <View style={styles.itemList}>
           {items.map((item) => {
             const nutrition = itemNutrition(item);
+            if (item.kind === 'manual') {
+              return (
+                <Card key={item.localId} style={styles.itemCard}>
+                  <View style={styles.itemHeader}>
+                    <View style={styles.itemTitle}>
+                      <AppText variant="subtitle">Unknown calories</AppText>
+                      <AppText variant="muted">One-off estimate · macros unavailable</AppText>
+                    </View>
+                    <Pressable onPress={() => removeItem(item.localId)} hitSlop={10}>
+                      <MinusCircle color={colors.red} size={20} />
+                    </Pressable>
+                  </View>
+                  <Field
+                    label="Item name (optional)"
+                    value={item.label}
+                    onChangeText={(label) => updateItem(item.localId, (old) => old.kind === 'manual' ? { ...old, label } : old)}
+                    placeholder="Restaurant meal"
+                  />
+                  <Field
+                    label="Calories"
+                    value={item.kcal}
+                    onChangeText={(kcal) => updateItem(item.localId, (old) => old.kind === 'manual' ? { ...old, kcal } : old)}
+                    keyboardType="decimal-pad"
+                    placeholder="500"
+                  />
+                </Card>
+              );
+            }
+
             return (
               <Card key={item.localId} style={styles.itemCard}>
                 <View style={styles.itemHeader}>
@@ -529,6 +631,9 @@ const styles = StyleSheet.create({
   resultCopy: {
     marginBottom: spacing.md,
     marginTop: spacing.xs,
+  },
+  noMatchActions: {
+    gap: spacing.sm,
   },
   addPill: {
     alignItems: 'center',

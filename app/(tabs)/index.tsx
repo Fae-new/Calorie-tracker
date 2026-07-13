@@ -239,7 +239,7 @@ export default function TodayScreen() {
                           <AppText variant="subtitle">{group.label}</AppText>
                         </View>
                         <AppText variant="muted">
-                          {group.logs.length} food{group.logs.length === 1 ? '' : 's'} · tap to view
+                          {group.logs.length} item{group.logs.length === 1 ? '' : 's'} · tap to view
                         </AppText>
                       </View>
                     </View>
@@ -257,7 +257,7 @@ export default function TodayScreen() {
                         <View style={styles.logMain}>
                           <AppText style={styles.foodName}>{log.foodNameSnapshot}</AppText>
                           <AppText variant="caption">
-                            {log.grams}g · {log.variantLabelSnapshot}
+                            {log.variantLabelSnapshot === 'Manual' ? 'Manual estimate' : `${log.grams}g · ${log.variantLabelSnapshot}`}
                           </AppText>
                         </View>
                         <View style={styles.logRight}>

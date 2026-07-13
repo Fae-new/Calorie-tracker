@@ -85,6 +85,10 @@ export default function AnalyticsScreen() {
       })),
     [dailyCalories],
   );
+  const calorieBarWidth = Math.max(
+    3,
+    Math.min(18, Math.floor(((chartWidth - 24) / Math.max(calorieData.length, 1)) * 0.62)),
+  );
 
   async function saveWeight() {
     const parsed = Number(weightKg);
@@ -169,8 +173,9 @@ export default function AnalyticsScreen() {
             data={calorieData}
             width={chartWidth}
             height={190}
-            barWidth={18}
-            spacing={18}
+            adjustToWidth
+            disableScroll
+            barWidth={calorieBarWidth}
             roundedTop
             roundedBottom
             yAxisColor={colors.border}
