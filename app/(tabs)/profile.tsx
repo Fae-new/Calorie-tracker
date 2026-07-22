@@ -3,7 +3,8 @@ import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { router, useFocusEffect } from 'expo-router';
-import { BookOpen, ChevronDown, ChevronRight, Download, Save, Scale } from 'lucide-react-native';
+import * as Sharing from 'expo-sharing';
+import { BookOpen, ChevronDown, ChevronRight, Download, Save, Scale, Share2 } from 'lucide-react-native';
 import { useSQLiteContext } from 'expo-sqlite';
 
 import { Button } from '../../src/components/Button';
@@ -12,6 +13,7 @@ import { Field } from '../../src/components/Form';
 import { Screen } from '../../src/components/Screen';
 import { AppText } from '../../src/components/Text';
 import { activityLabels, calculateMaintenanceCalories, calculateTargetCalories, goalLabels } from '../../src/lib/calculations';
+import { createFaeDataExport } from '../../src/lib/dataExport';
 import { importHistoryFromJson } from '../../src/lib/historyImport';
 import { getProfile, saveProfile } from '../../src/lib/repository';
 import { colors, spacing } from '../../src/lib/theme';
@@ -47,6 +49,7 @@ export default function ProfileScreen() {
   const [targetCalories, setTargetCalories] = useState('');
   const [calculatorOpen, setCalculatorOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const parsedAgePreview = Number(age);
   const parsedHeightPreview = Number(heightCm);
@@ -152,6 +155,40 @@ export default function ProfileScreen() {
     }
   }
 
+  async function exportAllData() {
+    if (isExporting) {
+      return;
+    }
+
+    try {
+      setIsExporting(true);
+      if (!FileSystem.cacheDirectory) {
+        throw new Error('Fae could not access temporary storage on this device.');
+      }
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (!canShare) {
+        throw new Error('File sharing is not available on this device.');
+      }
+
+      const backup = await createFaeDataExport(db);
+      const date = new Date().toISOString().slice(0, 10);
+      const fileUri = `${FileSystem.cacheDirectory}fae-data-${date}.json`;
+      await FileSystem.writeAsStringAsync(fileUri, JSON.stringify(backup, null, 2), {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      await Sharing.shareAsync(fileUri, {
+        dialogTitle: 'Export Fae data',
+        mimeType: 'application/json',
+        UTI: 'public.json',
+      });
+    } catch (error) {
+      Alert.alert('Export failed', error instanceof Error ? error.message : 'Fae could not export your data.');
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
   return (
     <Screen>
       <View style={styles.header}>
@@ -217,15 +254,22 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.cardTitleCopy}>
             <AppText variant="subtitle">Tools</AppText>
-            <AppText variant="muted">Edit foods or review old weigh-ins when needed.</AppText>
+            <AppText variant="muted">Back up your data or edit older records.</AppText>
           </View>
         </View>
         <View style={styles.toolButtons}>
+          <Button
+            title={isExporting ? 'Preparing export...' : 'Export all data'}
+            onPress={exportAllData}
+            disabled={isExporting}
+            icon={<Share2 color={colors.white} size={18} />}
+          />
           <Button
             title={isImporting ? 'Importing...' : 'Import history JSON'}
             onPress={importHistory}
             disabled={isImporting}
             icon={<Download color={colors.white} size={18} />}
+            variant="secondary"
           />
           <Button title="Food database" onPress={() => router.push('/foods')} variant="secondary" />
           <Button title="Weight history" onPress={() => router.push('/weight')} variant="secondary" />
